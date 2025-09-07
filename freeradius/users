@@ -1,0 +1,3 @@
+# users file for FreeRADIUS
+# example:
+# testuser Cleartext-Password := "password"
