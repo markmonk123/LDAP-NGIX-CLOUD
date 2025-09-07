@@ -1,0 +1,6 @@
+# Ignore data directories and certificates
+data/*
+!data/**/
+!data/**/.gitkeep
+nginx/certs/*
+!nginx/certs/.gitkeep

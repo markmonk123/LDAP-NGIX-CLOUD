@@ -1,0 +1,111 @@
+---
+version: "3.9"
+
+services:
+  ad:
+    image: ghcr.io/monogramm/docker-samba-ad-dc:latest
+    container_name: TEAMELITEAD
+    hostname: TEAMELITEAD
+    environment:
+      SAMBA_DOMAIN: TEAMELITEAD
+      SAMBA_REALM: TEAMELITEAD.LOCAL
+      SAMBA_ADMIN_PASSWORD: ${SAMBA_ADMIN_PASSWORD:-ChangeMe123!}
+    networks:
+      ad_net:
+        ipv4_address: 192.168.65.2
+    volumes:
+      - ad_data:/var/lib/samba
+    restart: unless-stopped
+
+  ldap:
+    image: osixia/openldap:1.5.0
+    container_name: ldap
+    environment:
+      LDAP_ORGANISATION: TEAMELITEAD
+      LDAP_DOMAIN: teamelitead.local
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:-ChangeMe123!}
+    networks:
+      ad_net:
+        ipv4_address: 192.168.65.3
+    volumes:
+      - ldap_data:/var/lib/ldap
+      - ldap_config:/etc/ldap/slapd.d
+    restart: unless-stopped
+
+  radius:
+    image: freeradius/freeradius-server:latest
+    container_name: radius
+    environment:
+      LDAP_URI: ldap://ldap
+      LDAP_BASE_DN: dc=teamelitead,dc=local
+      LDAP_BIND_DN: cn=admin,dc=teamelitead,dc=local
+      LDAP_BIND_PW: ${LDAP_ADMIN_PASSWORD:-ChangeMe123!}
+    depends_on:
+      - ldap
+    networks:
+      ad_net:
+        ipv4_address: 192.168.65.4
+    ports:
+      - "1812:1812/udp"
+      - "1813:1813/udp"
+    volumes:
+      - ./freeradius/clients.conf:/etc/freeradius/3.0/clients.conf:ro
+      - ./freeradius/users:/etc/freeradius/3.0/users:ro
+    restart: unless-stopped
+
+  phpldapadmin:
+    image: osixia/phpldapadmin:0.9.0
+    container_name: phpldapadmin
+    environment:
+      PHPLDAPADMIN_LDAP_HOSTS: ldap
+    networks:
+      ad_net:
+        ipv4_address: 192.168.65.5
+    depends_on:
+      - ldap
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: reverse-proxy
+    depends_on:
+      - phpldapadmin
+    networks:
+      ad_net:
+        ipv4_address: 192.168.65.10
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    restart: unless-stopped
+
+networks:
+  ad_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.65.0/24
+          gateway: 192.168.65.1
+
+volumes:
+  ad_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/ad
+      # Ensure this host path has at least 15GB available
+  ldap_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/ldap
+  ldap_config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/ldap-config
