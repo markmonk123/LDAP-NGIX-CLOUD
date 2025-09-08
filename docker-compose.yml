@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  samba_ad:
+    image: danielguerra/alpine-samba-ad:latest
+    container_name: TEAMELITEAD
+    environment:
+      SAMBA_DOMAIN: SAMBA-DOMAIN
+      SAMBA_REALM: SAMBA-DOMAIN.LOCAL
+      SAMBA_ADMIN_PASSWORD: ChangeMe123!
+      HOSTNAME: TEAMELITEAD
+    volumes:
+      - ad-data:/var/lib/samba
+    networks:
+      adnet:
+        ipv4_address: 192.168.65.10
+
+  nginx:
+    image: nginx:alpine
+    depends_on:
+      - samba_ad
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      adnet:
+        ipv4_address: 192.168.65.20
+
+  openldap:
+    image: osixia/openldap:1.5.0
+    environment:
+      LDAP_ORGANISATION: "Samba Domain"
+      LDAP_DOMAIN: "samba-domain.local"
+      LDAP_ADMIN_PASSWORD: admin
+    volumes:
+      - ldap-data:/var/lib/ldap
+      - ldap-config:/etc/ldap/slapd.d
+    networks:
+      adnet:
+        ipv4_address: 192.168.65.30
+
+  freeradius:
+    image: freeradius/freeradius-server:latest
+    depends_on:
+      - openldap
+    environment:
+      FREERADIUS_LDAP_URI: ldap://openldap
+    networks:
+      adnet:
+        ipv4_address: 192.168.65.40
+    command: ["freeradius", "-X"]
+
+networks:
+  adnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.65.0/24
+          gateway: 192.168.65.1
+
+volumes:
+  ad-data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=15g
+  ldap-data:
+  ldap-config:
